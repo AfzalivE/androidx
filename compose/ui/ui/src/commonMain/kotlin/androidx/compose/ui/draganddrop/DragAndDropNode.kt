@@ -200,10 +200,16 @@ internal class DragAndDropNode(
             // Moved within child.
             currentChildNode?.contains(event.positionInRoot) == true -> currentChildNode
             // Position is now outside active child, maybe it entered a different one.
-            else -> firstDescendantOrNull { child ->
-                // Only dispatch to children who previously accepted the onStart gesture
-                requireOwner().dragAndDropManager.isInterestedNode(child) &&
-                    child.contains(event.positionInRoot)
+            else -> {
+                var foundDescendant = findFirstInterestedDescendant(event)
+                if (foundDescendant == null) {
+                    if (refreshInterestedNodes(event)) {
+                        // Try again after refreshing.
+                        foundDescendant = findFirstInterestedDescendant(event)
+                    }
+                }
+
+                foundDescendant
             }
         }
 
@@ -266,6 +272,44 @@ internal class DragAndDropNode(
         ContinueTraversal
     }
     // end DropTarget
+
+    private fun findFirstInterestedDescendant(event: DragAndDropEvent) : DragAndDropNode? {
+        return firstDescendantOrNull { child ->
+            // Only dispatch to children who previously accepted the onStart gesture
+            requireOwner().dragAndDropManager.isInterestedNode(child) &&
+                child.contains(event.positionInRoot)
+        }
+    }
+
+    private fun refreshInterestedNodes(event: DragAndDropEvent): Boolean {
+        var newInterestedDescendantsFound = false
+        traverseDescendants { currentNode ->
+            if (!currentNode.isAttached) {
+                return@traverseDescendants SkipSubtreeAndContinueTraversal
+            }
+
+            // Already registered.
+            if (currentNode.thisDragAndDropTarget != null) {
+                return@traverseDescendants SkipSubtreeAndContinueTraversal
+            }
+
+            // Start receiving events
+            currentNode.thisDragAndDropTarget = currentNode.onDragAndDropStart(event)
+
+            val accepted = currentNode.thisDragAndDropTarget != null
+            if (accepted) {
+                println("${currentNode.thisDragAndDropTarget} accepted transfer")
+                requireOwner().dragAndDropManager.registerNodeInterest(currentNode)
+            } else {
+                println("${currentNode.thisDragAndDropTarget} rejected transfer")
+            }
+
+            newInterestedDescendantsFound = newInterestedDescendantsFound || accepted
+            ContinueTraversal
+        }
+
+        return newInterestedDescendantsFound
+    }
 }
 
 private fun DragAndDropTarget.dispatchEntered(event: DragAndDropEvent) = run {

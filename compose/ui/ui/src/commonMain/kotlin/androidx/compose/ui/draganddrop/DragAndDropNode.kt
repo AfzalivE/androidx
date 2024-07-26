@@ -195,21 +195,20 @@ internal class DragAndDropNode(
     }
 
     override fun onMoved(event: DragAndDropEvent) {
+        // Make sure we're aware of any new interested nodes.
+        refreshInterestedNodes(event)
+
         val currentChildNode: DragAndDropModifierNode? = lastChildDragAndDropModifierNode
         val newChildNode: DragAndDropModifierNode? = when {
             // Moved within child.
             currentChildNode?.contains(event.positionInRoot) == true -> currentChildNode
             // Position is now outside active child, maybe it entered a different one.
             else -> {
-                var foundDescendant = findFirstInterestedDescendant(event)
-                if (foundDescendant == null) {
-                    if (refreshInterestedNodes(event)) {
-                        // Try again after refreshing.
-                        foundDescendant = findFirstInterestedDescendant(event)
-                    }
+                firstDescendantOrNull { child ->
+                    // Only dispatch to children who previously accepted the onStart gesture
+                    requireOwner().dragAndDropManager.isInterestedNode(child) &&
+                        child.contains(event.positionInRoot)
                 }
-
-                foundDescendant
             }
         }
 
@@ -273,16 +272,7 @@ internal class DragAndDropNode(
     }
     // end DropTarget
 
-    private fun findFirstInterestedDescendant(event: DragAndDropEvent) : DragAndDropNode? {
-        return firstDescendantOrNull { child ->
-            // Only dispatch to children who previously accepted the onStart gesture
-            requireOwner().dragAndDropManager.isInterestedNode(child) &&
-                child.contains(event.positionInRoot)
-        }
-    }
-
-    private fun refreshInterestedNodes(event: DragAndDropEvent): Boolean {
-        var newInterestedDescendantsFound = false
+    private fun refreshInterestedNodes(event: DragAndDropEvent) {
         traverseDescendants { currentNode ->
             if (!currentNode.isAttached) {
                 return@traverseDescendants SkipSubtreeAndContinueTraversal
@@ -298,17 +288,11 @@ internal class DragAndDropNode(
 
             val accepted = currentNode.thisDragAndDropTarget != null
             if (accepted) {
-                println("${currentNode.thisDragAndDropTarget} accepted transfer")
                 requireOwner().dragAndDropManager.registerNodeInterest(currentNode)
-            } else {
-                println("${currentNode.thisDragAndDropTarget} rejected transfer")
             }
 
-            newInterestedDescendantsFound = newInterestedDescendantsFound || accepted
             ContinueTraversal
         }
-
-        return newInterestedDescendantsFound
     }
 }
 
